@@ -4,6 +4,8 @@ A monophonic subtractive synthesizer plugin built with [JUCE](https://juce.com/)
 
 Available as **VST3** (Windows, macOS, Linux), **AU** (macOS), and **Standalone**.
 
+![Molude](assets/screenshot.png)
+
 ## Features
 
 - **Oscillator** — Sine and Saw waveforms
