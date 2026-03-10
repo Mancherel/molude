@@ -1,5 +1,7 @@
 #include "SynthEngine.h"
 
+#include <algorithm>
+
 void SynthEngine::prepare (double newSampleRate, int samplesPerBlock, int numChannels)
 {
     sampleRate = newSampleRate;
@@ -21,6 +23,21 @@ void SynthEngine::prepare (double newSampleRate, int samplesPerBlock, int numCha
     ladderFilter.setMode (juce::dsp::LadderFilterMode::LPF24);
     ladderFilter.setCutoffFrequencyHz (baseCutoffHz);
     ladderFilter.setResonance (filterResonance);
+
+    pulseWidthSmoothed.reset (sampleRate, parameterRampSeconds);
+    pulseWidthSmoothed.setCurrentAndTargetValue (pulseWidth);
+
+    cutoffSmoothed.reset (sampleRate, parameterRampSeconds);
+    cutoffSmoothed.setCurrentAndTargetValue (baseCutoffHz);
+
+    resonanceSmoothed.reset (sampleRate, parameterRampSeconds);
+    resonanceSmoothed.setCurrentAndTargetValue (filterResonance);
+
+    filterEnvDepthSmoothed.reset (sampleRate, parameterRampSeconds);
+    filterEnvDepthSmoothed.setCurrentAndTargetValue (filterEnvDepth);
+
+    gainSmoothed.reset (sampleRate, parameterRampSeconds);
+    gainSmoothed.setCurrentAndTargetValue (gain);
 }
 
 void SynthEngine::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
@@ -71,49 +88,33 @@ void SynthEngine::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuff
     if (! didRender)
         return;
 
-    // Phase 2: Apply filter in sub-blocks with envelope modulation
+    // Phase 2: Apply filter and gain with per-sample smoothing
     auto* channelData = buffer.getWritePointer (0);
-    int samplesRemaining = numSamples;
-    int offset = 0;
+    float* monoChannel[] { channelData };
 
-    while (samplesRemaining > 0)
+    for (int sample = 0; sample < numSamples; ++sample)
     {
-        int chunkSize = juce::jmin (samplesRemaining, filterUpdateInterval);
+        ladderFilter.setResonance (resonanceSmoothed.getNextValue());
+        ladderFilter.setCutoffFrequencyHz (getSmoothedFilterCutoff (filterAdsr.getNextSample()));
 
-        // Advance filter envelope and update cutoff
-        float envValue = filterAdsr.getNextSample();
-        // Advance envelope for remaining samples in chunk (keep it in sync)
-        for (int i = 1; i < chunkSize; ++i)
-            filterAdsr.getNextSample();
-
-        updateFilterCutoff (envValue);
-
-        // Process this sub-block through the filter
-        juce::dsp::AudioBlock<float> subBlock (&channelData, 1, static_cast<size_t> (offset),
-                                                static_cast<size_t> (chunkSize));
-        juce::dsp::ProcessContextReplacing<float> context (subBlock);
+        juce::dsp::AudioBlock<float> sampleBlock (monoChannel, 1, static_cast<size_t> (sample), 1);
+        juce::dsp::ProcessContextReplacing<float> context (sampleBlock);
         ladderFilter.process (context);
 
-        offset += chunkSize;
-        samplesRemaining -= chunkSize;
+        channelData[sample] *= gainSmoothed.getNextValue();
     }
-
-    // Apply gain
-    if (gain != 1.0f)
-        buffer.applyGain (0, 0, numSamples, gain);
 
     // Copy mono to remaining channels
     for (int ch = 1; ch < numChannels; ++ch)
         buffer.copyFrom (ch, 0, buffer, 0, 0, numSamples);
 }
 
-void SynthEngine::updateFilterCutoff (float envValue)
+float SynthEngine::getSmoothedFilterCutoff (float envValue)
 {
     // Modulate in octaves: baseCutoff * 2^(envValue * depth * 10)
-    float modOctaves = envValue * filterEnvDepth * 10.0f;
-    float modulated = baseCutoffHz * std::pow (2.0f, modOctaves);
-    modulated = juce::jlimit (20.0f, 20000.0f, modulated);
-    ladderFilter.setCutoffFrequencyHz (modulated);
+    auto modOctaves = envValue * filterEnvDepthSmoothed.getNextValue() * 10.0f;
+    auto modulated = cutoffSmoothed.getNextValue() * std::pow (2.0f, modOctaves);
+    return juce::jlimit (20.0f, 20000.0f, modulated);
 }
 
 float SynthEngine::generateSample()
@@ -142,7 +143,7 @@ float SynthEngine::generateSample()
             break;
 
         case Pulse:
-            raw = (phase < static_cast<double> (pulseWidth)) ? 1.0f : -1.0f;
+            raw = (phase < static_cast<double> (pulseWidthSmoothed.getNextValue())) ? 1.0f : -1.0f;
             break;
 
         case Noise:
@@ -162,33 +163,71 @@ float SynthEngine::generateSample()
     return raw * ampAdsr.getNextSample() * currentVelocity;
 }
 
-void SynthEngine::handleMidiEvent (const juce::MidiMessage& msg)
+void SynthEngine::startNote (int midiNote, float velocity, bool retriggerEnvelope)
 {
-    if (msg.isNoteOn())
-    {
-        currentMidiNote = msg.getNoteNumber();
-        currentVelocity = msg.getFloatVelocity();
-        phaseIncrement = juce::MidiMessage::getMidiNoteInHertz (currentMidiNote) / sampleRate;
+    currentMidiNote = midiNote;
+    currentVelocity = velocity;
+    phaseIncrement = juce::MidiMessage::getMidiNoteInHertz (currentMidiNote) / sampleRate;
 
+    if (retriggerEnvelope)
+    {
         ampAdsr.setParameters (ampAdsrParams);
         ampAdsr.noteOn();
 
         filterAdsr.setParameters (filterAdsrParams);
         filterAdsr.noteOn();
     }
+}
+
+void SynthEngine::releaseCurrentNote()
+{
+    ampAdsr.noteOff();
+    filterAdsr.noteOff();
+}
+
+void SynthEngine::removeHeldNote (int midiNote)
+{
+    heldNotes.erase (std::remove_if (heldNotes.begin(), heldNotes.end(),
+                                     [midiNote] (const HeldNote& note)
+                                     {
+                                         return note.noteNumber == midiNote;
+                                     }),
+                     heldNotes.end());
+}
+
+void SynthEngine::handleMidiEvent (const juce::MidiMessage& msg)
+{
+    if (msg.isNoteOn())
+    {
+        auto noteNumber = msg.getNoteNumber();
+        removeHeldNote (noteNumber);
+        heldNotes.push_back ({ noteNumber, msg.getFloatVelocity() });
+        startNote (noteNumber, msg.getFloatVelocity(), true);
+    }
     else if (msg.isNoteOff())
     {
-        if (msg.getNoteNumber() == currentMidiNote)
+        auto releasedNote = msg.getNoteNumber();
+        auto wasCurrentNote = (releasedNote == currentMidiNote);
+        removeHeldNote (releasedNote);
+
+        if (heldNotes.empty())
         {
-            ampAdsr.noteOff();
-            filterAdsr.noteOff();
+            if (wasCurrentNote)
+                releaseCurrentNote();
+        }
+        else if (wasCurrentNote)
+        {
+            const auto& fallbackNote = heldNotes.back();
+            startNote (fallbackNote.noteNumber, fallbackNote.velocity, false);
         }
     }
     else if (msg.isAllNotesOff() || msg.isAllSoundOff())
     {
+        heldNotes.clear();
         ampAdsr.reset();
         filterAdsr.reset();
         currentMidiNote = -1;
+        currentVelocity = 0.0f;
     }
 }
 
@@ -201,31 +240,37 @@ void SynthEngine::setWaveform (int type)
 void SynthEngine::setPulseWidth (float width)
 {
     pulseWidth = juce::jlimit (0.05f, 0.95f, width);
+    pulseWidthSmoothed.setTargetValue (pulseWidth);
 }
 
 void SynthEngine::setFilterParams (float cutoffHz, float resonance)
 {
     baseCutoffHz = cutoffHz;
     filterResonance = resonance;
-    ladderFilter.setResonance (resonance);
+    cutoffSmoothed.setTargetValue (baseCutoffHz);
+    resonanceSmoothed.setTargetValue (filterResonance);
 }
 
 void SynthEngine::setADSR (float attack, float decay, float sustain, float release)
 {
     ampAdsrParams = { attack, decay, sustain, release };
+    ampAdsr.setParameters (ampAdsrParams);
 }
 
 void SynthEngine::setFilterEnvParams (float attack, float decay, float sustain, float release)
 {
     filterAdsrParams = { attack, decay, sustain, release };
+    filterAdsr.setParameters (filterAdsrParams);
 }
 
 void SynthEngine::setFilterEnvDepth (float depth)
 {
     filterEnvDepth = depth;
+    filterEnvDepthSmoothed.setTargetValue (filterEnvDepth);
 }
 
 void SynthEngine::setGain (float gainLinear)
 {
     gain = gainLinear;
+    gainSmoothed.setTargetValue (gain);
 }

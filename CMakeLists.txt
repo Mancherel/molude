@@ -9,6 +9,8 @@ else()
     set(MOLUDE_FORMATS VST3 Standalone)
 endif()
 
+option(MOLUDE_COPY_PLUGIN_AFTER_BUILD "Copy built plugins into the system plugin folders" OFF)
+
 juce_add_plugin(Molude
     COMPANY_NAME "MagnusBlix"
     IS_SYNTH TRUE
@@ -16,7 +18,7 @@ juce_add_plugin(Molude
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
-    COPY_PLUGIN_AFTER_BUILD TRUE
+    COPY_PLUGIN_AFTER_BUILD ${MOLUDE_COPY_PLUGIN_AFTER_BUILD}
     PLUGIN_MANUFACTURER_CODE Mblx
     PLUGIN_CODE Mold
     FORMATS ${MOLUDE_FORMATS}

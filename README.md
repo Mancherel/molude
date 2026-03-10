@@ -8,7 +8,7 @@ Available as **VST3** (Windows, macOS, Linux), **AU** (macOS), and **Standalone*
 
 ## Features
 
-- **Oscillator** — Sine and Saw waveforms
+- **Oscillator** — Sine, Saw, Square, Triangle, Pulse, and Noise waveforms
 - **Low-pass filter** — 24 dB/oct ladder filter with cutoff and resonance
 - **Filter envelope** — Dedicated ADSR with bipolar depth control (-100% to +100%)
 - **Amp envelope** — Standard ADSR for amplitude shaping
@@ -58,7 +58,7 @@ cmake --build build --config Release -j$(sysctl -n hw.ncpu)
 | AU | `~/Library/Audio/Plug-Ins/Components/Molude.component` |
 | Standalone | `build/Molude_artefacts/Release/Standalone/Molude.app` |
 
-> **Note:** The build auto-installs VST3 and AU to the system plugin folders. You may need to rescan plugins in your DAW.
+> **Note:** To auto-install built plugins to the system plugin folders, configure with `-DMOLUDE_COPY_PLUGIN_AFTER_BUILD=ON`. The default build keeps artefacts inside `build/`.
 
 **Optional — Xcode project:**
 
@@ -142,7 +142,7 @@ cp -r build/Molude_artefacts/Release/VST3/Molude.vst3 ~/.vst3/
 
 | Parameter | Range | Default | Description |
 |-----------|-------|---------|-------------|
-| Waveform | Sine, Saw | Sine | Oscillator waveform |
+| Waveform | Sine, Saw, Square, Triangle, Pulse, Noise | Sine | Oscillator waveform |
 | Cutoff | 20 Hz – 20 kHz | 1000 Hz | Filter cutoff frequency |
 | Resonance | 0 – 100% | 10% | Filter resonance |
 | Depth | -100% – +100% | 50% | Filter envelope modulation depth |
