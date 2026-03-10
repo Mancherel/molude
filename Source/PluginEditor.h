@@ -4,6 +4,74 @@
 #include "PluginProcessor.h"
 #include "MoludeLookAndFeel.h"
 
+//==============================================================================
+// Waveform oscilloscope display
+//==============================================================================
+class WaveformDisplay : public juce::Component, private juce::Timer
+{
+public:
+    WaveformDisplay();
+
+    void setParameters (std::atomic<float>* waveform, std::atomic<float>* pw);
+    void paint (juce::Graphics& g) override;
+
+private:
+    void timerCallback() override { repaint(); }
+
+    std::atomic<float>* waveformParam = nullptr;
+    std::atomic<float>* pwParam       = nullptr;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaveformDisplay)
+};
+
+//==============================================================================
+// ADSR envelope display — oscilloscope style
+//==============================================================================
+class EnvelopeDisplay : public juce::Component, private juce::Timer
+{
+public:
+    EnvelopeDisplay();
+
+    void setParameters (std::atomic<float>* a, std::atomic<float>* d,
+                        std::atomic<float>* s, std::atomic<float>* r);
+    void paint (juce::Graphics& g) override;
+
+private:
+    void timerCallback() override { repaint(); }
+
+    std::atomic<float>* attackParam  = nullptr;
+    std::atomic<float>* decayParam   = nullptr;
+    std::atomic<float>* sustainParam = nullptr;
+    std::atomic<float>* releaseParam = nullptr;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EnvelopeDisplay)
+};
+
+//==============================================================================
+// Filter frequency response display — oscilloscope style
+//==============================================================================
+class FilterDisplay : public juce::Component, private juce::Timer
+{
+public:
+    FilterDisplay();
+
+    void setParameters (std::atomic<float>* cutoff, std::atomic<float>* reso,
+                        std::atomic<float>* depth);
+    void paint (juce::Graphics& g) override;
+
+private:
+    void timerCallback() override { repaint(); }
+
+    static float getMagnitude (float freq, float cutoffHz, float resonance);
+
+    std::atomic<float>* cutoffParam = nullptr;
+    std::atomic<float>* resoParam   = nullptr;
+    std::atomic<float>* depthParam  = nullptr;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FilterDisplay)
+};
+
+//==============================================================================
 class MoludeEditor : public juce::AudioProcessorEditor
 {
 public:
@@ -17,21 +85,25 @@ private:
     MoludeAudioProcessor& processorRef;
     MoludeLookAndFeel moludeLnF;
 
-    // Waveform selector
-    juce::ComboBox waveformBox;
+    // Displays
+    WaveformDisplay waveformDisplay;
+    FilterDisplay filterDisplay;
+    EnvelopeDisplay filtEnvDisplay;
+    EnvelopeDisplay ampEnvDisplay;
+
+    // Oscillator knobs
+    juce::Slider waveformSlider;
     juce::Label waveformLabel;
+    juce::Slider pulseWidthSlider;
+    juce::Label pulseWidthLabel;
 
     // Filter knobs
     juce::Slider cutoffSlider;
     juce::Label cutoffLabel;
     juce::Slider resonanceSlider;
     juce::Label resonanceLabel;
-
-    // Filter envelope depth
     juce::Slider filtEnvDepthSlider;
     juce::Label filtEnvDepthLabel;
-
-    // Gain knob
     juce::Slider gainSlider;
     juce::Label gainLabel;
 
@@ -56,7 +128,8 @@ private:
     juce::Label releaseLabel;
 
     // APVTS attachments
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> waveformAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> waveformAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> pulseWidthAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> cutoffAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> resonanceAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> filtEnvDepthAttachment;

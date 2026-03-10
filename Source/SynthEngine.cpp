@@ -125,17 +125,35 @@ float SynthEngine::generateSample()
 
     switch (currentWaveform)
     {
-        case 0: // Sine
+        case Sine:
             raw = static_cast<float> (std::sin (2.0 * juce::MathConstants<double>::pi * phase));
             break;
-        case 1: // Saw
+
+        case Saw:
             raw = static_cast<float> (2.0 * phase - 1.0);
             break;
+
+        case Square:
+            raw = (phase < 0.5) ? 1.0f : -1.0f;
+            break;
+
+        case Triangle:
+            raw = static_cast<float> (2.0 * std::abs (2.0 * phase - 1.0) - 1.0);
+            break;
+
+        case Pulse:
+            raw = (phase < static_cast<double> (pulseWidth)) ? 1.0f : -1.0f;
+            break;
+
+        case Noise:
+            raw = noiseRng.nextFloat() * 2.0f - 1.0f;
+            break;
+
         default:
             break;
     }
 
-    // Advance phase
+    // Advance phase (not needed for noise, but harmless)
     phase += phaseIncrement;
     if (phase >= 1.0)
         phase -= 1.0;
@@ -176,8 +194,13 @@ void SynthEngine::handleMidiEvent (const juce::MidiMessage& msg)
 
 void SynthEngine::setWaveform (int type)
 {
-    jassert (type >= 0 && type <= 1);
+    jassert (type >= 0 && type < NumWaveforms);
     currentWaveform = type;
+}
+
+void SynthEngine::setPulseWidth (float width)
+{
+    pulseWidth = juce::jlimit (0.05f, 0.95f, width);
 }
 
 void SynthEngine::setFilterParams (float cutoffHz, float resonance)

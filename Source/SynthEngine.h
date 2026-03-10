@@ -10,11 +10,15 @@ public:
     void processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi);
 
     void setWaveform (int type);
+    void setPulseWidth (float width);
     void setFilterParams (float cutoffHz, float resonance);
     void setADSR (float attack, float decay, float sustain, float release);
     void setFilterEnvParams (float attack, float decay, float sustain, float release);
     void setFilterEnvDepth (float depth);
     void setGain (float gainLinear);
+
+    // Waveform indices
+    enum Waveform { Sine = 0, Saw, Square, Triangle, Pulse, Noise, NumWaveforms };
 
 private:
     float generateSample();
@@ -24,7 +28,8 @@ private:
     // Oscillator
     double phase = 0.0;
     double phaseIncrement = 0.0;
-    int currentWaveform = 0; // 0 = sine, 1 = saw
+    int currentWaveform = 0;
+    float pulseWidth = 0.5f;
     int currentMidiNote = -1;
     float currentVelocity = 0.0f;
 
@@ -47,6 +52,9 @@ private:
 
     double sampleRate = 44100.0;
     int preparedChannels = 2;
+
+    // Noise RNG
+    juce::Random noiseRng;
 
     // Sub-block update rate for filter cutoff
     static constexpr int filterUpdateInterval = 32;

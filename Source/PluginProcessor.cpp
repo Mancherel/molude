@@ -14,7 +14,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout MoludeAudioProcessor::create
 
     params.push_back (std::make_unique<juce::AudioParameterChoice> (
         juce::ParameterID { "OSC_WAVEFORM", 1 }, "Waveform",
-        juce::StringArray { "Sine", "Saw" }, 0));
+        juce::StringArray { "Sine", "Saw", "Square", "Triangle", "Pulse", "Noise" }, 0));
+
+    params.push_back (std::make_unique<juce::AudioParameterFloat> (
+        juce::ParameterID { "PULSE_WIDTH", 1 }, "Pulse Width",
+        juce::NormalisableRange<float> (0.05f, 0.95f, 0.01f),
+        0.5f));
 
     params.push_back (std::make_unique<juce::AudioParameterFloat> (
         juce::ParameterID { "FILTER_CUTOFF", 1 }, "Filter Cutoff",
@@ -91,6 +96,7 @@ void MoludeAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce:
 
     // Push parameter values to synth engine
     synthEngine.setWaveform (static_cast<int> (apvts.getRawParameterValue ("OSC_WAVEFORM")->load()));
+    synthEngine.setPulseWidth (apvts.getRawParameterValue ("PULSE_WIDTH")->load());
     synthEngine.setFilterParams (apvts.getRawParameterValue ("FILTER_CUTOFF")->load(),
                                 apvts.getRawParameterValue ("FILTER_RESONANCE")->load());
     synthEngine.setADSR (apvts.getRawParameterValue ("AMP_ATTACK")->load(),
